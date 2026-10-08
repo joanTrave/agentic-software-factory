@@ -1,57 +1,107 @@
-# 🏭 Agentic Software Factory
+# Agentic Software Factory
 
-> You write the idea. A tiny crew of AI agents writes the rest.
-> You just say "approved" twice and look important. 😎
+A Claude Code setup that turns a short project description into a working repository, then delivers
+every task through a team of specialised agents. The agents do the heavy lifting; you keep the final
+say at two approval gates.
 
-## 👀 Show me, don't tell me
+## See it in action
 
-Check out the **[`example`](https://github.com/joanTrave/agentic-software-factory/tree/example)**
-branch. It's a full repository built by this factory, following the house rules in
-[`docs/`](docs/): a FastAPI service with a health check that actually talks to the database,
-plus Alembic, Docker and tests. The receipts (plan, architecture gate, review) live in
-`.claude/tasks/constitution/`.
+The [`example`](https://github.com/joanTrave/agentic-software-factory/tree/example) branch holds a
+repository built with this factory, following the conventions in [`docs/`](docs/). It's a FastAPI
+service with:
 
-## 🧑‍🔧 Meet the crew
+- a health check endpoint that really talks to the database
+- Alembic migrations
+- Docker and docker-compose with `api`, `test` and `db` services
+- a test suite
 
-| Agent | Job description |
+The artifacts that produced it (the plan, the architecture gate and the review) are in
+`.claude/tasks/constitution/`, so you can follow how it was built step by step.
+
+## The team
+
+| Agent | Responsibility |
 |---|---|
-| 🔍 **Refiner** | Turns your vague ticket into a crisp mission spec |
-| 📐 **Architect** | Draws the blueprints so nobody builds a kitchen in the garage |
-| 🧪 **Tester** | Writes the tests first. Nobody else gets to touch them |
-| 🛠️ **Developer** | Writes code until the Tester stops complaining |
-| 🧐 **Reviewer** | Judges everything. Says no a lot |
+| **Refiner** | Turns a ticket, a pasted description or a URL into a precise mission spec. |
+| **Architect** | Designs the solution: module boundaries, dependencies, persistence, API. Writes the plan and the decision document you approve. |
+| **Tester** | Writes the tests from the approved plan before any code exists. Only the Tester can change them. |
+| **Developer** | Implements the plan until the Tester's tests pass, then commits once you approve. |
+| **Reviewer** | Independently checks correctness, architecture, maintainability, security and test quality, and returns a verdict. |
 
-## 🎮 Commands
+## Commands
 
-| Command | What happens |
-|---|---|
-| `/initiate-repository <name>` | Reads `docs/constitution.md` and builds a real, runnable repo (Docker, DB and health check included) once you approve the plan |
-| `/refine-task <jira-key\|text\|url>` | Writes the mission spec to `.claude/tasks/<id>/specs/` |
-| `/architect-plan <id>` | Writes `plan.md` + `architecture-gate.md` → **🚦 you approve** |
-| `/implement <id>` | Tester → Developer ⇄ Reviewer (3 rounds max) → **🚦 you approve** |
-| `/ship <id>` | Branch, Conventional Commit, push, draft PR to `development` |
+Run these inside Claude Code from the repository root.
 
-## 🚀 Your first day
+### `/initiate-repository <repository-name>`
+
+Builds a new project from `docs/constitution.md`. The Architect plans the structure and you approve
+it. After that, every file is written with real content, never as an empty placeholder. Each file's
+content comes from the first of these sources that settles it:
+
+1. `docs/constitution.md`
+2. `docs/best_practices.md`
+3. `docs/custom_implementations/`
+4. the skills in `.claude/skills/`
+
+The result includes a database-connected health check, a `.env`, and a runnable Docker setup.
+`<repository-name>` becomes the project name and the API path segment (`/api/<repository-name>/v1/...`).
+
+### `/refine-task <jira-key | text | url>`
+
+Writes the mission spec to `.claude/tasks/<task-id>/specs/<task-id>.md`. `<task-id>` is the Jira key
+when there is one, otherwise a kebab-case slug.
+
+### `/architect-plan <task-id>`
+
+Produces two files in `.claude/tasks/<task-id>/plan/`:
+
+- `plan.md`: the implementation and test plan the other agents follow.
+- `architecture-gate.md`: the decision document you read and approve. This is **approval gate 1**.
+
+### `/implement <task-id>`
+
+1. The Tester writes the tests.
+2. The Developer and the Reviewer loop for up to three rounds. The verdict is written to
+   `.claude/tasks/<task-id>/reviews/review.json` and `review.md`.
+   - `approved` or `approved_with_warnings` ends the loop.
+   - `changes_requested` sends the Developer back for another round.
+   - `rejected` or `blocked` stops the loop and hands the problem to you.
+3. It stops for your approval before anything is committed. This is **approval gate 2**.
+
+### `/ship <task-id>`
+
+Commits approved work on a `feature/<task-id>-<slug>` (or `hotfix/...`) branch, using Conventional
+Commits with a `Refs: <task-id>` footer. It then pushes the branch and opens a draft PR against
+`development` with the standing reviewers.
+
+## Your first project
 
 ```text
 1. Describe your project in docs/constitution.md
-2. /initiate-repository my-shiny-service   ← once per repo
+2. /initiate-repository my-service      once per repository
 
-3. /refine-task BOF-1234                   ← for every task
-4. /architect-plan BOF-1234                → read architecture-gate.md, approve
-5. /implement BOF-1234                     → read review.md, approve
-6. /ship BOF-1234                          → go get a coffee ☕
+3. /refine-task BOF-1234                for every task
+4. /architect-plan BOF-1234             read architecture-gate.md and approve
+5. /implement BOF-1234                  read review.md and approve
+6. /ship BOF-1234
 ```
 
-## 🗺️ Where things live
+## Where things live
 
-- `docs/`: the house rules (constitution, best practices, reusable building blocks)
-- `.claude/agents/`: the crew
-- `.claude/commands/`: the buttons
-- `.claude/skills/`: the rulebook every agent follows
-- `CLAUDE.md`: the workflow, start to finish
+| Path | Contents |
+|---|---|
+| `docs/constitution.md` | The project definition: stack, structure, conventions. Written by a human. |
+| `docs/best_practices.md` | Numbered code patterns: domain isolation, transactions, dependency injection, permissions, repositories, tests, naming. |
+| `docs/custom_implementations/` | Reusable building blocks (`CustomException`, `@requires_permissions`, `@with_transaction`). Wire them in; don't reimplement them. |
+| `.claude/agents/delivery/` | The agent definitions. |
+| `.claude/commands/` | The commands above. |
+| `.claude/skills/` | The rules every agent follows: architecture, naming, testing, git, artifacts, mission spec. |
+| `.claude/metrics/` | A log of agent token usage, with reporting scripts. |
+| `CLAUDE.md` | The full workflow Claude Code follows in this repository. |
 
-## 🔧 Make it yours
+## Adapting it to your stack
 
-Swap the skills marked **EXAMPLE** (`python`, `dependency-injection`, `naming`) for your stack.
-Then add your reviewers in `.claude/skills/git/SKILL.md`.
+- Skills marked **EXAMPLE** (`python`, `dependency-injection`, `naming`) are meant to be swapped for
+  your own stack.
+- Add your standing reviewers in `.claude/skills/git/SKILL.md`.
+- Adjust the PR tooling section of that skill if you aren't on Bitbucket.
