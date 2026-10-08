@@ -1,4 +1,4 @@
-# `<project>` - Best Practices
+# example-api - Best Practices
 
 This file is read by PR-Agent to enforce team coding standards. Violations are flagged as "Organization best practice" suggestions.
 
@@ -345,7 +345,7 @@ from fastapi.testclient import TestClient
 
 from tests.pokemons.infrastructure.database.factories.pokemon import PokemonBOFactory
 
-ENDPOINT = "/api/<project>/v1/pokemons"
+ENDPOINT = "/api/example-api/v1/pokemons"
 PERMISSION = "pokemons:list"
 
 

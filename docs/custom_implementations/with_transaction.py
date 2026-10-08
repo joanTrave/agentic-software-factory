@@ -53,6 +53,27 @@ def session_manager():
         session.close()
 
 
+def get_read_session() -> Session:
+    """Return the session a read-only repository should use, without owning its lifecycle.
+
+    Inside an enclosing `@with_transaction`/`session_manager()` scope this is that scope's own
+    session, so the read joins the caller's transaction and the scope releases the connection.
+    Outside any scope it is a fresh *autocommit-mode* session (SQLAlchemy 1.4 legacy mode): it
+    holds no connection between statements, checking one out only while a statement runs and
+    returning it to the pool as soon as the result is consumed. Nothing therefore has to close
+    it, which is what makes `IDatabaseRepositorySQL.db` safe to hand back from a property.
+    Writes belong in a `@with_transaction` use case, not here.
+    """
+    existing = _current_session.get()
+    if existing is not None:
+        return existing
+
+    if _session_factory is None:
+        raise RuntimeError("Call configure_session_factory() before using get_read_session().")
+
+    return _session_factory(autocommit=True)
+
+
 def with_transaction(method: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator for a use case's action method: run it inside one committed transaction.
 

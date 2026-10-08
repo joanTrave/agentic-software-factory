@@ -1,0 +1,314 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "review_report",
+  "task_id": "constitution",
+  "generated_at": "2026-10-09T00:00:00Z",
+  "reviewed": {
+    "base": "main",
+    "head": "working-tree",
+    "diff_command": "git diff main...HEAD (working tree vs main; nothing committed yet for this task)"
+  },
+  "plan_ref": ".claude/tasks/constitution/plan/plan.md",
+  "spec_ref": null,
+
+  "status": "approved_with_warnings",
+  "overall_score": 7,
+
+  "dimensions": {
+    "architecture": {
+      "score": 8,
+      "status": "concern",
+      "summary": "The critical C1 defect from the previous review is fixed at the root: IDatabaseRepositorySQL.db no longer opens a `with session_manager() as session: return session` block (which exited the context manager before the caller got the value); it now calls the new get_read_session(), which returns the enclosing @with_transaction scope's session when one exists, or a fresh autocommit-mode session otherwise. CF1-CF6 decisions, module boundaries and domain purity all remain intact (re-verified: no fastapi/sqlalchemy import under any domain/ package). One undisclosed deviation: HealthQueryServiceSQL now opens its own session_manager() block instead of using self.db (plan §5.3 named self.db explicitly), which is technically necessary and correct (SET LOCAL statement_timeout and SELECT 1 must share one connection; self.db/get_read_session() hands back a brand-new autocommit session on each property access outside a transaction, so two separate self.db reads would not even share a connection) but is not recorded anywhere in plan.md or architecture-gate.md.",
+      "evidence": [
+        "src/core/infrastructure/database/sql/repositories/i_database_repository_sql.py:25-27",
+        "src/core/infrastructure/database/sql/session_manager.py:56-74",
+        "src/health/infrastructure/database/health_query_service_sql.py:28-33"
+      ]
+    },
+    "correctness": {
+      "score": 9,
+      "status": "ok",
+      "summary": "The connection-leak bug is empirically fixed, not just structurally changed. Reran the full suite (61 passed, 0 failed) and independently re-verified the specific failure mode from the previous rejection: tests/core/infrastructure/database/sql/repositories/test_i_database_repository_sql.py exercises self.db against a pool_size=2 engine for 6 calls and asserts checkedout()==0 afterwards (passes); tests/health/infrastructure/database/test_health_query_service_sql.py does the same directly against HealthQueryServiceSQL.check_database_connection() (passes). I additionally ran the real containerized app end-to-end (`docker compose up --build api` against the real `db` service) and hit GET /api/example-api/v1/health 30 times in a row: all 30 returned 200, confirming no pool exhaustion outside the test harness as well. tests/core/test_migrations.py's _REPO_ROOT now uses parents[2] (matching conftest.py's own parent.parent), resolves to the repo root, and `docker compose run --rm test` (the mandatory CI gate) is green: 61 passed, 0 failed.",
+      "evidence": [
+        "tests/core/infrastructure/database/sql/repositories/test_i_database_repository_sql.py:19-30",
+        "tests/health/infrastructure/database/test_health_query_service_sql.py:65-79",
+        "tests/core/test_migrations.py:4",
+        "command_output: docker compose --profile test run --rm test -> 61 passed, 6 warnings",
+        "command_output: 30x curl http://localhost:8000/api/example-api/v1/health -> 200 (all 30)"
+      ]
+    },
+    "maintainability": {
+      "score": 7,
+      "status": "concern",
+      "summary": "Previous W2 (scripts/run_local_tests.sh pointing at the dev DB) and W4 (custom @autowired reimplementation) are both resolved: the script is gone, replaced by scripts/init_test_db.sh (only creates the *_test database at container init, never touched by the suite directly), and every @autowired usage now imports directly from summer.inversion_of_control.dependencies with no wrapper anywhere in src/. Two new disclosure gaps: (1) the Developer edited the shared reference files docs/custom_implementations/with_transaction.py and its README to add the new get_read_session() primitive, rather than confining the extension to this project's own wired copy — these files are explicitly documented as reusable 'starting points for a new project, not drop-in production code', so adding new primitive surface area to the shared reference itself is a decision with consequences beyond this task; (2) src/health/application/check_health/check_health_use_case.py is the only file in the codebase without `from __future__ import annotations` (summer's @autowired cannot resolve postponed/string annotations), which is correct but undocumented anywhere — no comment in the file, no mention in .claude/skills/dependency-injection/SKILL.md, no note in plan.md — so the next bounded context's first @autowired constructor is likely to copy a sibling file's future-import convention and hit a confusing runtime failure.",
+      "evidence": [
+        "docs/custom_implementations/with_transaction.py:56-74",
+        "docs/custom_implementations/README.md:19-21",
+        "src/health/application/check_health/check_health_use_case.py:1-11",
+        "scripts/init_test_db.sh:1-9"
+      ]
+    },
+    "testing": {
+      "score": 8,
+      "status": "concern",
+      "summary": "99% overall coverage, 98% diff coverage (above the 90% gate), 61/61 passing locally and in the `docker compose run --rm test` gate. Strong, deliberate regression coverage for exactly the bug class that caused the previous rejection: both a generic IDatabaseRepositorySQL pool test and a HealthQueryServiceSQL-specific pool test, each checking both 'still returns correct results' and 'pool.checkedout() == 0' after N+1 calls against a pool_size=2 engine (tests/conftest.py's small_pool_engine fixture) -- this is exactly recommendation R1 from the previous review, implemented and then some. One quality concern: test_override_service_restores_the_real_service_after_the_test has no explicit dependency on running after the two preceding override_service tests in the same file; it is only meaningful because pytest's default execution order happens to run it last. Run in isolation (pytest -k test_override_service_restores) it passes vacuously, since nothing was ever overridden, which could mask a real regression in monkeypatch-based restoration without the test ever failing. No reordering plugin (pytest-randomly/xdist) is currently installed, so there is no live risk today, but nothing guards against that changing.",
+      "evidence": [
+        "tests/core/infrastructure/database/sql/repositories/test_i_database_repository_sql.py:19-30",
+        "tests/health/infrastructure/database/test_health_query_service_sql.py:65-79",
+        "tests/health/application/test_check_health_use_case.py:60-64",
+        "command_output: diff-cover coverage.xml --compare-branch=main --fail-under=90 -> Coverage: 98%",
+        "command_output: pytest --cov=src -q -> 61 passed"
+      ]
+    },
+    "security": {
+      "score": 8,
+      "status": "ok",
+      "summary": "Unchanged from the previous review's verified findings: health-check errors never leak str(exc) (only the exception class name, verified by a passing test), @requires_permissions verifies Cognito JWKS when configured and is enforced as mandatory in staging/production via a Settings validator, no hardcoded credentials in source. New in this diff: RequestIdMiddleware validates an inbound X-Request-ID header against `^[A-Za-z0-9._-]{1,128}$` before echoing/logging it, rejecting anything that could carry a log/header-injection payload and falling back to a generated uuid4 hex otherwise; the id is bound via a ContextVar and explicitly cleared in a `finally` block after every request, and is pure-ASGI (not BaseHTTPMiddleware) specifically so the var cannot leak across requests. Verified with a live test: concurrent-looking sequential requests get distinct ids and the var reads None between requests.",
+      "evidence": [
+        "src/core/infrastructure/api/request_id_middleware.py:16,34-50",
+        "tests/core/infrastructure/api/test_request_id_middleware.py:24-41",
+        "tests/health/infrastructure/database/test_health_query_service_sql.py:51-57"
+      ]
+    },
+    "performance": {
+      "score": 9,
+      "status": "ok",
+      "summary": "Direct resolution of the previous critical finding: the connection leak that exhausted a pool_size=2 engine in 3 calls and self-inflicted a health-check outage is fixed. Re-verified against a live Postgres container both at the unit-test level (small_pool_engine, checkedout()==0 after 6 calls) and at the full containerized-application level (30 consecutive real HTTP calls to the health endpoint through the built Docker image, all 200).",
+      "evidence": [
+        "command_output: docker compose --profile test run --rm test -> 61 passed",
+        "command_output: 30x curl against dockerized api -> all 200"
+      ]
+    },
+    "observability": {
+      "score": 8,
+      "status": "ok",
+      "summary": "The plan §3 request-id propagation deliverable, missing in the previous review (W3), is now implemented: RequestIdMiddleware generates or reuses a validated inbound id, binds it to a ContextVar, _JsonFormatter includes it on every log record emitted during the request, and it is echoed on the response header. Verified with a dedicated test asserting a log record emitted inside a request handler carries the bound id. JSON structured logging to stdout remains in place.",
+      "evidence": [
+        "src/core/infrastructure/api/request_id_middleware.py:1-50",
+        "src/core/infrastructure/logging/logging_config.py:26-30",
+        "tests/core/infrastructure/api/test_request_id_middleware.py:54-69"
+      ]
+    }
+  },
+
+  "coverage": {
+    "measured": true,
+    "tool": "diff-cover",
+    "command": "pytest --cov=src --cov-report=xml -q && diff-cover coverage.xml --compare-branch=main --fail-under=90",
+    "diff_coverage_percent": 98.0,
+    "threshold_percent": 90,
+    "passed": true,
+    "exempt_files": []
+  },
+
+  "tests_executed": {
+    "run": true,
+    "command": "DATABASE_URL=postgresql+psycopg2://example:example@localhost:5432/example_api_test pytest --cov=src --cov-report=term-missing --cov-report=xml -q -p no:cacheprovider; also docker compose --profile test run --rm test",
+    "exit_code": 0,
+    "passed": 61,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+
+  "lint": {
+    "run": true,
+    "command": "ruff check . --exclude alembic/env.py && ruff format --check .",
+    "exit_code": 0,
+    "violations": 0
+  },
+
+  "requirements_verification": [
+    {
+      "id": "CR-1",
+      "source": "docs/constitution.md#stack",
+      "statement": "Stack: Python >=3.11,<3.14, FastAPI, SQLAlchemy 1.4 + Alembic migrations, uv, pytest+pytest-cov+polyfactory, ruff, Docker/docker-compose",
+      "status": "verified",
+      "evidence": [
+        {"type": "code", "ref": "pyproject.toml:5,7-16", "detail": "requires-python >=3.11,<3.14; sqlalchemy>=1.4,<2.0; alembic, pytest, pytest-cov, polyfactory, ruff present"},
+        {"type": "command_output", "ref": "docker compose --profile test build test", "detail": "image builds and resolves sqlalchemy==1.4.54 in the lockfile output"}
+      ]
+    },
+    {
+      "id": "CR-2",
+      "source": "docs/constitution.md#structure",
+      "statement": "Every `## Structure` file line exists",
+      "status": "verified",
+      "evidence": [
+        {"type": "command_output", "ref": "find src tests alembic -type f", "detail": "every listed path present and unchanged from the prior verified review, plus the new request_id_middleware.py / request_context.py"}
+      ]
+    },
+    {
+      "id": "CR-3",
+      "source": "docs/constitution.md#conventions",
+      "statement": "Strict dependency direction; domain has no framework imports",
+      "status": "verified",
+      "evidence": [
+        {"type": "command_output", "ref": "grep -rn \"^import|^from\" src/core/domain src/health/domain", "detail": "no fastapi/sqlalchemy import anywhere under domain/, re-verified after this diff"}
+      ]
+    },
+    {
+      "id": "CR-4",
+      "source": "docs/constitution.md#conventions",
+      "statement": "One module = one bounded context; no cross-module infrastructure import",
+      "status": "not_applicable",
+      "evidence": [
+        {"type": "code", "ref": "src/health/**", "detail": "only one module (health) exists at this stage; no cross-module import is possible yet"}
+      ]
+    },
+    {
+      "id": "CR-5",
+      "source": "docs/constitution.md#conventions",
+      "statement": "tests/<module>/ mirrors src/<module>/; integration tests hit a real test database, not mocks",
+      "status": "verified",
+      "evidence": [
+        {"type": "test", "ref": "tests/health/infrastructure/database/test_health_query_service_sql.py::test_check_database_connection_returns_up_with_non_negative_latency", "detail": "passes against a live Postgres container"}
+      ]
+    },
+    {
+      "id": "CR-6",
+      "source": "docs/constitution.md#conventions",
+      "statement": "One Alembic migration per logical schema change",
+      "status": "verified",
+      "evidence": [
+        {"type": "code", "ref": "alembic/versions/20261008_1732_45d1051709bf_initial_empty_schema.py", "detail": "single initial revision; tests/core/test_migrations.py upgrade/downgrade round-trip passes with the corrected repo-root path"}
+      ]
+    },
+    {
+      "id": "CR-7",
+      "source": "docs/constitution.md#conventions",
+      "statement": "Custom domain exceptions extend a shared base exception type",
+      "status": "verified",
+      "evidence": [
+        {"type": "test", "ref": "tests/core/domain/test_custom_exception.py::test_custom_not_found_exception_builds_message_and_reason", "detail": "passes"}
+      ]
+    },
+    {
+      "id": "CR-8",
+      "source": "docs/constitution.md#conventions",
+      "statement": "Serializers are Pydantic models built from_bo",
+      "status": "verified",
+      "evidence": [
+        {"type": "code", "ref": "src/health/application/check_health/serializers/health_output.py:16-23,32-40", "detail": "HealthOutput.from_bo / DependencyCheckOutput.from_bo implemented and exercised by passing router tests"}
+      ]
+    },
+    {
+      "id": "CR-9",
+      "source": "docs/constitution.md#conventions",
+      "statement": "ruff check and ruff format --check pass with zero violations; the pinned version is authoritative",
+      "status": "verified",
+      "evidence": [
+        {"type": "command_output", "ref": "ruff check . --exclude alembic/env.py", "detail": "All checks passed! (installed ruff 0.16.10 matches the pyproject.toml pin ruff==0.16.10 exactly; no separate CI pin file exists in this repo to diverge from)"},
+        {"type": "command_output", "ref": "ruff format --check .", "detail": "73 files already formatted"}
+      ]
+    },
+    {
+      "id": "CR-10",
+      "source": "docs/constitution.md#conventions",
+      "statement": "CustomException, @requires_permissions, @with_transaction are not reinvented per module",
+      "status": "verified",
+      "evidence": [
+        {"type": "code", "ref": "docs/custom_implementations/README.md:18-30", "detail": "wiring table records exactly where each primitive lives; src/core/** matches it; get_read_session() is an addition to the same primitive, not a reinvention"}
+      ]
+    },
+    {
+      "id": "CR-11",
+      "source": "docs/constitution.md#conventions",
+      "statement": "Unauthenticated GET /health, structured as its own module, returns 200 healthy / 503 unhealthy and reflects real database health",
+      "status": "verified",
+      "evidence": [
+        {"type": "test", "ref": "tests/health/infrastructure/api/v1/test_health_router.py::test_health_returns_200_when_database_is_reachable", "detail": "passes"},
+        {"type": "test", "ref": "tests/health/infrastructure/database/test_health_query_service_sql.py::test_check_database_connection_stays_up_when_called_more_times_than_the_pool_size", "detail": "passes -- the previous review's self-inflicted-outage defect is fixed and now has a direct regression test"},
+        {"type": "command_output", "ref": "30x curl http://localhost:8000/api/example-api/v1/health against the built Docker image", "detail": "all 200, confirming no degradation under repeated real calls"}
+      ]
+    },
+    {
+      "id": "CR-12",
+      "source": "docs/constitution.md#conventions",
+      "statement": "docker-compose.yml runnable as-is with api/test/db services",
+      "status": "verified",
+      "evidence": [
+        {"type": "command_output", "ref": "docker compose --profile test build test && docker compose --profile test run --rm test", "detail": "builds and runs the test service end-to-end: 61 passed, 0 failed"},
+        {"type": "command_output", "ref": "docker compose up -d --build api", "detail": "api service builds, starts, reaches docker healthcheck status 'healthy'; GET /api/example-api/v1/health returns 200 against the real container"}
+      ]
+    },
+    {
+      "id": "CR-13",
+      "source": "docs/constitution.md#conventions",
+      "statement": "Multi-stage non-root Dockerfile; Dockerfile-prod without dev/test groups",
+      "status": "verified",
+      "evidence": [
+        {"type": "code", "ref": "Dockerfile-prod:16", "detail": "uv sync --frozen --no-install-project --no-dev --no-group test; USER appuser in both Dockerfiles"}
+      ]
+    }
+  ],
+
+  "critical_issues": [],
+
+  "warnings": [
+    {
+      "id": "W1",
+      "dimension": "architecture",
+      "severity": "minor",
+      "title": "HealthQueryServiceSQL's departure from plan §5.3 (own session_manager() block instead of self.db) is undisclosed",
+      "location": "src/health/infrastructure/database/health_query_service_sql.py:28-33",
+      "detail": "plan.md §5.3 specifies the probe runs 'via IDatabaseRepositorySQL.self.db -> session_manager()'. The implementation instead opens an explicit `with session_manager() as session:` block and never touches self.db. This is the technically correct choice, not a shortcut: outside an enclosing transaction, self.db (now backed by get_read_session()) hands back a brand-new autocommit-mode session on every property access, so two separate self.db reads for 'SET LOCAL statement_timeout' and 'SELECT 1' would not even share a connection, silently defeating the timeout. The deviation is explained in the class's own docstring but is not recorded in plan.md or architecture-gate.md, so a reader comparing the approved design to the code would see an unexplained discrepancy.",
+      "suggested_fix": "Add a one-line note to plan.md §5.3 (or a short addendum) recording that read-only repositories needing more than one statement on the same connection must open an explicit session_manager() block rather than relying on self.db, and that HealthQueryServiceSQL is the first example of this."
+    },
+    {
+      "id": "W2",
+      "dimension": "maintainability",
+      "severity": "minor",
+      "title": "Developer extended the shared reference implementation files, not just this project's wired copy",
+      "location": "docs/custom_implementations/with_transaction.py:56-74; docs/custom_implementations/README.md:10-30",
+      "detail": "docs/custom_implementations/README.md describes its files as 'starting points for a new project, not drop-in production code' -- a cross-project reference asset, not this project's own source. The Developer added the new get_read_session() function (and a wiring-table section) directly to that shared file and its README, rather than confining the new primitive to the project's wired copy at src/core/infrastructure/database/sql/session_manager.py and only linking back to it. The addition is correct and necessary (it is what fixes the previous review's C1), but changing a shared, human-maintained reference asset's permanent shape is a decision with consequences for every future project bootstrapped from it, and nothing in this task's trail (plan.md, architecture-gate.md) records that this was a deliberate, reviewed choice rather than an incidental side effect of fixing C1.",
+      "suggested_fix": "Confirm with the human maintainer of docs/custom_implementations/ whether get_read_session() belongs in the shared reference permanently, or whether the reference file should stay as it was and the addition should live only in src/core/infrastructure/database/sql/session_manager.py with a comment noting the extension."
+    },
+    {
+      "id": "W3",
+      "dimension": "maintainability",
+      "severity": "minor",
+      "title": "Undocumented `from __future__ import annotations` omission required for @autowired",
+      "location": "src/health/application/check_health/check_health_use_case.py:1",
+      "detail": "Every other source file in src/ carries `from __future__ import annotations`; this file is the sole exception, because summer's @autowired resolves constructor parameter annotations at runtime and cannot do so when they are postponed (string) annotations. This is a correct, necessary constraint, but it is not documented anywhere -- no comment in the file, no mention in .claude/skills/dependency-injection/SKILL.md, no note in plan.md. The next bounded context's first @autowired constructor is likely to be written by copying a sibling file (which has the future import) and will hit a confusing runtime resolution failure with no breadcrumb pointing at the cause.",
+      "suggested_fix": "Add a one-line comment at the top of check_health_use_case.py explaining the omission, and add a sentence to .claude/skills/dependency-injection/SKILL.md's @autowired example noting that the future-annotations import must be omitted from any module defining an @autowired constructor."
+    },
+    {
+      "id": "W4",
+      "dimension": "testing",
+      "severity": "minor",
+      "title": "test_override_service_restores_the_real_service_after_the_test relies on implicit execution order",
+      "location": "tests/health/application/test_check_health_use_case.py:60-64",
+      "detail": "This test has no explicit dependency (fixture, marker, or ordering plugin) on running after the two preceding override_service-based tests in the same file; it is only a meaningful assertion because pytest's default behavior runs test functions in file-declaration order. Run alone (e.g. `pytest -k test_override_service_restores`) it passes vacuously, since nothing was ever overridden in that run, which means a real regression in the override_service fixture's monkeypatch-based restoration would not be caught by a selective/filtered test run. No reordering plugin (pytest-randomly, xdist) is installed, so there is no live failure risk today, but the test's correctness is coupled to an implementation detail of the test runner rather than to an explicit contract.",
+      "suggested_fix": "Either compose the restoration check into the same test function as one of the override tests (assert the real service is back immediately after the overriding test body, before the fixture's teardown would run implicitly) or add an explicit pytest.mark.order / fixture dependency documenting the intended order, so the test's meaning does not depend on file layout."
+    }
+  ],
+
+  "recommendations": [
+    {
+      "id": "R1",
+      "dimension": "maintainability",
+      "title": "Record the HealthQueryServiceSQL / get_read_session design in plan.md or a short addendum",
+      "detail": "Both W1 and W2 stem from the same root cause: a real, correct architectural fix (C1) was made without updating the approved plan or getting explicit sign-off on extending the shared reference files. A short review-fixes.md or a plan.md patch recording 'self.db now resolves via get_read_session(); read-only repos needing a single connection across statements must open their own session_manager() block; get_read_session() was added to the shared reference, confirmed with the maintainer' would close both gaps at once.",
+      "priority": "medium"
+    },
+    {
+      "id": "R2",
+      "dimension": "maintainability",
+      "title": "Note the SQLAlchemy 2.0 migration debt from get_read_session()'s autocommit mode",
+      "detail": "get_read_session() relies on sessionmaker's deprecated `autocommit=True` kwarg (confirmed: triggers a RemovedIn20Warning on every call outside a transaction). This is correct and intentional for the pinned SQLAlchemy 1.4 stack, but it is a specific, named item of technical debt if the project ever upgrades to SQLAlchemy 2.0 (autocommit mode is fully removed there). Worth a one-line note near the function or in a future ADR so the upgrade isn't a surprise.",
+      "priority": "low"
+    }
+  ],
+
+  "test_ownership": {
+    "tester_tests_modified": false,
+    "modified_files": []
+  },
+
+  "verdict": {
+    "recommendation": "approve",
+    "blocking_reasons": [],
+    "summary": "All four blocking/major items from the previous rejected review are resolved and independently re-verified: the IDatabaseRepositorySQL connection leak is fixed and empirically confirmed clean at the unit-test, docker-compose-test-service, and real-containerized-app levels; tests/core/test_migrations.py's path bug is fixed and the mandatory `docker compose run --rm test` gate is green (61/61); the unsafe run_local_tests.sh script is gone; and the custom @autowired reimplementation is gone in favor of summer's own @autowired as mandated. Diff coverage (98%) and lint are clean. Remaining findings are four minor, non-blocking disclosure/documentation gaps -- two architecture/process decisions made correctly but not recorded against the approved plan (HealthQueryServiceSQL's departure from §5.3, and extending the shared docs/custom_implementations/ reference files rather than only this project's wired copy), one undocumented but necessary @autowired/future-annotations constraint, and one test whose correctness depends on implicit file-order execution rather than an explicit contract."
+  }
+}

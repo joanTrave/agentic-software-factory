@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    env_file: [.env]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - example-api-db-data:/var/lib/postgresql/data
+      - ./scripts/init_test_db.sh:/docker-entrypoint-initdb.d/init_test_db.sh
+    ports:
+      - "5432:5432"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: [.env]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/example-api/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: [.env]
+    environment:
+      # Overrides the dev DSN from `.env` with the dedicated `*_test` database
+      # `scripts/init_test_db.sh` creates, so the suite never touches dev data. Built from the
+      # same `POSTGRES_*` vars `.env` already defines, rather than depending on `TEST_DATABASE_URL`
+      # also being set at the compose-substitution level (`${TEST_DATABASE_URL}` would silently
+      # resolve to an empty string if that variable is only left to `Settings`' own default).
+      DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}_test"
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: [""]
+    command: ["sh", "-c", "alembic upgrade head && pytest --cov=src --cov-report=term-missing --cov-report=xml"]
+    profiles: ["test"]
+
+volumes:
+  example-api-db-data:

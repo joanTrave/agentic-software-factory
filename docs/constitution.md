@@ -1,4 +1,4 @@
-# api-service
+# example-api
 
 A modular-monolith API: one FastAPI service exposing several bounded-context modules
 (orders, products, clients, billing, notifications, ...), each internally structured as
