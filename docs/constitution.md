@@ -32,6 +32,12 @@ src/<module>/infrastructure/database/
 src/<module>/infrastructure/database/models/
 src/<module>/infrastructure/database/repositories/
 src/<module>/infrastructure/database/fixtures/
+src/health/
+src/health/domain/
+src/health/application/
+src/health/infrastructure/
+src/health/infrastructure/api/
+src/health/infrastructure/database/
 src/app.py
 tests/
 tests/<module>/
@@ -80,3 +86,26 @@ README.md
   `@with_transaction`) are not reinvented per module — reference implementations live in
   `docs/custom_implementations/` (see `docs/custom_implementations/README.md`), wired to the
   project's real session factory/auth stack once at startup.
+- The service exposes an unauthenticated `GET /health` endpoint, structured as its own module
+  (`src/health/`) like any other bounded context rather than a one-off route bolted onto `app.py`.
+  It verifies the service's critical dependencies (at minimum the database connection) and
+  returns `200` when healthy, `503` with a structured error body when not — this is what the
+  container orchestrator / load balancer polls for liveness and readiness, so it must never
+  itself depend on authentication, another service being up, or any state the service can't
+  verify on its own.
+- `docker-compose.yml` must be runnable as-is (`docker compose up`) and define at least three
+  services:
+  - `api` — the application, built from `Dockerfile`, reading its configuration from `.env`,
+    waiting on `db`'s healthcheck before starting (`depends_on: db: condition: service_healthy`),
+    migrating the schema and then starting the app server as its container command (mirroring
+    `entrypoint.sh`).
+  - `test` — the same image as `api`, overriding the entrypoint to run the test suite against `db`
+    instead of starting the server; this is the one command a developer or CI runs to execute the
+    full test suite in a clean, reproducible environment, not a convenience alias for a locally
+    configured interpreter.
+  - `db` — the project's database engine (Postgres by default) with a healthcheck, seed credentials
+    matching `.env`'s database variables, and a named volume so data survives a container restart.
+  `Dockerfile` is multi-stage: a builder stage that installs dependencies via the project's package
+  manager, and a final stage that copies only the built artifacts (not build tooling) and runs as a
+  non-root user. `Dockerfile-prod` is the same shape tuned for production (no dev/test dependency
+  groups, no bind-mounted source).
