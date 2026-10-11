@@ -8,8 +8,6 @@ strings, e.g. `'["pokemons:list"]'`, matching the Cognito custom-attribute conve
 raises HTTP 403 if the caller holds none of them.
 """
 
-from __future__ import annotations
-
 import functools
 import inspect
 import json

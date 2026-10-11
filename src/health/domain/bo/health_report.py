@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pydantic import BaseModel
 
 from src.health.domain.bo.dependency_check import DependencyCheck

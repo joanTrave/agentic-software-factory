@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pydantic import BaseModel
 
 from src.health.domain.bo.dependency_check import DependencyCheck
@@ -14,7 +12,7 @@ class DependencyCheckOutput(BaseModel):
     error: str | None = None
 
     @staticmethod
-    def from_bo(check: DependencyCheck) -> DependencyCheckOutput:
+    def from_bo(check: DependencyCheck) -> "DependencyCheckOutput":
         return DependencyCheckOutput(
             name=check.name,
             status=check.status.value,
@@ -30,7 +28,7 @@ class HealthOutput(BaseModel):
     reason: str | None = None
 
     @staticmethod
-    def from_bo(report: HealthReport) -> HealthOutput:
+    def from_bo(report: HealthReport) -> "HealthOutput":
         is_healthy = report.status == HealthStatusEnum.HEALTHY
         return HealthOutput(
             status=report.status.value,

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from contextvars import ContextVar
 
 REQUEST_ID_HEADER = "x-request-id"

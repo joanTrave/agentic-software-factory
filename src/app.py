@@ -7,8 +7,6 @@ filesystem autodiscovery, so an accidentally-unmounted router is a review-visibl
 hidden globals").
 """
 
-from __future__ import annotations
-
 from fastapi import FastAPI
 
 from src.core.domain.exceptions.custom_exception import CustomException

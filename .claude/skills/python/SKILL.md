@@ -30,6 +30,13 @@ Use this order:
 
 Use Ruff/isort-compatible ordering.
 
+Do not use `from __future__ import annotations` in any Python file.
+
+- Why: annotations must be evaluated eagerly, because runtime-inspecting code (the DI container's
+  `@autowired`, FastAPI, Pydantic) resolves them.
+- For a forward or self reference, quote that single annotation, quoting the whole expression
+  (e.g. `-> "MyClass | None"`).
+
 ## Code quality
 
 - Use type hints consistently.

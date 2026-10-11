@@ -9,8 +9,6 @@ use directly (`with session_manager() as session: ...`) when a use case method i
 involved.
 """
 
-from __future__ import annotations
-
 import functools
 from collections.abc import Callable
 from contextlib import contextmanager

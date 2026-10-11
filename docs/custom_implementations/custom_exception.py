@@ -7,8 +7,6 @@ exception in this project inherits from `CustomException` instead of Python's bu
 `"pokemonNotFound"`).
 """
 
-from __future__ import annotations
-
 
 class CustomException(Exception):
     """Base class for all domain/application exceptions.

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from enum import StrEnum
 from typing import Any
 
@@ -14,7 +12,7 @@ class CustomEnum(StrEnum):
     """
 
     @classmethod
-    def _missing_(cls, value: Any) -> CustomEnum | None:
+    def _missing_(cls, value: Any) -> "CustomEnum | None":
         if isinstance(value, str):
             lowered = value.lower()
             for member in cls:

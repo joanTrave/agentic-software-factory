@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-
 class CustomException(Exception):
     """Base class for all domain/application exceptions (best_practices.md Pattern 6).
 

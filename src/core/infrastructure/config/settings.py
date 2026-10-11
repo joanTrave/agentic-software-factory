@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,7 +38,7 @@ class Settings(BaseSettings):
     cognito_client_id: str | None = None
 
     @model_validator(mode="after")
-    def _derive_test_database_url(self) -> Settings:
+    def _derive_test_database_url(self) -> "Settings":
         """Default `test_database_url` to `database_url` with `_test` appended to the
         database name, unless the caller set `TEST_DATABASE_URL` explicitly."""
         if self.test_database_url is None:
@@ -49,7 +47,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _require_cognito_settings_in_deployed_environments(self) -> Settings:
+    def _require_cognito_settings_in_deployed_environments(self) -> "Settings":
         """`local`/`test` tolerate unset Cognito settings (the mock auth fixture signs its
         own tokens); `staging`/`production` must not silently run with authentication
         effectively disabled."""

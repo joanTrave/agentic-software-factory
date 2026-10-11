@@ -9,8 +9,6 @@ through `get_read_session()` via `IDatabaseRepositorySQL.db`
 (`src/core/infrastructure/database/sql/repositories/i_database_repository_sql.py`).
 """
 
-from __future__ import annotations
-
 import functools
 from collections.abc import Callable
 from contextlib import contextmanager

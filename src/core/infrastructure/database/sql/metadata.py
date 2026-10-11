@@ -6,8 +6,6 @@ health module owns no tables, so it contributes nothing here yet — the next bo
 its import to this file.
 """
 
-from __future__ import annotations
-
 from src.core.infrastructure.database.sql.base import Base
 
 __all__ = ["Base"]

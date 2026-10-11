@@ -7,8 +7,6 @@ Called by `src/app.py` (module import time, so `src.app:app` is ready for gunico
 bootstrap path production does, rather than a parallel test-only setup.
 """
 
-from __future__ import annotations
-
 from summer.inversion_of_control.service_locator import (
     discover_services,
     get_executable_parent_path,

@@ -14,8 +14,6 @@ signature verification so the `mock_cognito_auth` test fixture's locally-signed 
 working — this project has no other identity provider to verify against in those environments.
 """
 
-from __future__ import annotations
-
 import functools
 import inspect
 import json

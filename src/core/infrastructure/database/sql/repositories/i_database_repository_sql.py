@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from sqlalchemy.orm import Session
 
 from src.core.infrastructure.database.sql.session_manager import get_read_session

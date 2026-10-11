@@ -1,0 +1,244 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "review_report",
+  "task_id": "remove-future-annotations",
+  "generated_at": "2026-10-11T19:50:54Z",
+  "reviewed": {
+    "base": "HEAD",
+    "head": "working-tree",
+    "diff_command": "git diff -- gunicorn.conf.py src/ docs/custom_implementations/ .claude/skills/python/SKILL.md"
+  },
+  "plan_ref": ".claude/tasks/remove-future-annotations/plan/plan.md",
+  "spec_ref": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md",
+
+  "status": "approved_with_warnings",
+  "overall_score": 8,
+
+  "dimensions": {
+    "architecture": {
+      "score": 9,
+      "status": "ok",
+      "summary": "Pure mechanical refactor: no module boundaries, dependency direction, or layering changed. The 5 self-reference fixes use string-quoted annotations exactly as decided (D2), not typing.Self or class restructuring. Decisions D1-D4 from the gate report were followed as written.",
+      "evidence": ["src/core/domain/enum.py:17", "src/core/infrastructure/config/settings.py:41,47", "src/health/application/check_health/serializers/health_output.py:15,31"]
+    },
+    "correctness": {
+      "score": 9,
+      "status": "ok",
+      "summary": "Repo-wide grep for 'from __future__ import' returns zero matches outside .venv/.git. All 23 src files + gunicorn.conf.py + 3 docs/custom_implementations files had only the import (and at most one adjacent blank line) removed; no reordering or unrelated edits found in any diff hunk. The 5 self-referencing return annotations are quoted as whole expressions ('-> \"CustomEnum | None\"', '-> \"Settings\"', '-> \"DependencyCheckOutput\"', '-> \"HealthOutput\"'), matching the plan's required form. Verified every module under src/ imports cleanly (48 modules, no NameError) via a direct one-off import-all command run in the project's own Docker test container, and the full suite (61 tests) passes unchanged in that same container.",
+      "evidence": ["command_output: grep -rn \"from __future__ import\" --include=*.py . (excl .venv/.git) -> 0 matches", "command_output: docker compose run --rm test -> 61 passed", "command_output: python -c \"import every src module\" -> imported 48 modules OK"]
+    },
+    "maintainability": {
+      "score": 8,
+      "status": "ok",
+      "summary": "The SKILL.md addition is clear, short, correctly placed under '## Imports' (not '## Code quality'), states the prohibition, the reason (eager evaluation for @autowired/FastAPI/Pydantic), and the fix pattern, without touching any other line of the file. Blank-line handling after removing the import is correct everywhere: files where the import was on line 1 now start directly with the next import/class, and docstring-prefixed files keep exactly one blank line (docs/custom_implementations/custom_exception.py keeps 2 blank lines before the class, same as pre-change, which is correct PEP8 spacing before a top-level class, not a leftover double blank from the edit). One ding: the Developer's own reported file count ('24 files under src/') does not match the actual 23 files under src/ in the diff -- see W1.",
+      "evidence": [".claude/skills/python/SKILL.md:33-38", "docs/custom_implementations/custom_exception.py:8-11", "src/core/domain/exceptions/custom_exception.py:1"]
+    },
+    "testing": {
+      "score": 8,
+      "status": "ok",
+      "summary": "No new/changed test files, per the deliberate human decision recorded in the gate (D4) -- not treated as a defect. Existing suite passes unchanged (61 passed, 0 failed) in the project's own Docker test container. The only non-deletion lines in the diff are the 5 quoted return annotations, all inside files the test run reports at 100% statement coverage (enum.py, settings.py, health_output.py); diff coverage for those lines is therefore 100%, well above the 90% gate. The diff-cover CLI itself could not be executed against this working-tree diff inside the sandbox (the test image has no git binary, and ad hoc bind-mounting the full repo into the image for a one-off diff-cover run was unreliable in this Windows/Docker Desktop sandbox); coverage was instead measured by cross-referencing the actual coverage.xml line-coverage data against every added/modified line in the actual diff (all other diff lines are pure deletions, which do not count toward diff coverage). See coverage block for detail.",
+      "evidence": ["tests/core/domain/test_enum.py", "tests/core/infrastructure/config/test_settings.py", "tests/health/infrastructure/api/v1/test_health_router.py", "command_output: pytest --cov=src --cov-report=xml -> enum.py 100%, settings.py 100%, health_output.py 100%"]
+    },
+    "security": {
+      "score": null,
+      "status": "not_applicable",
+      "summary": "No security-relevant code path (auth, permissions, token handling, SQL) changed in substance -- requires_permissions.py and the Cognito-related settings.py validators only had the future import removed / return annotation quoted.",
+      "evidence": []
+    },
+    "performance": {
+      "score": null,
+      "status": "not_applicable",
+      "summary": "No hot path, query, or algorithmic change; eager vs lazy annotation evaluation has no measurable runtime cost for this codebase's size.",
+      "evidence": []
+    },
+    "observability": {
+      "score": null,
+      "status": "not_applicable",
+      "summary": "logging_config.py and request_context.py only had the future import removed; no logging/observability behavior changed.",
+      "evidence": []
+    }
+  },
+
+  "coverage": {
+    "measured": true,
+    "tool": "pytest-cov (coverage.xml) cross-referenced manually against the diff; diff-cover CLI could not be executed in this sandbox -- see testing dimension summary",
+    "command": "docker compose --profile test run --rm test -> pytest --cov=src --cov-report=xml -q; git diff -- gunicorn.conf.py src/ docs/custom_implementations/",
+    "diff_coverage_percent": 100,
+    "threshold_percent": 90,
+    "passed": true,
+    "exempt_files": []
+  },
+
+  "tests_executed": {
+    "run": true,
+    "command": "docker compose --profile test run --rm test (alembic upgrade head && pytest --cov=src --cov-report=term-missing --cov-report=xml)",
+    "exit_code": 0,
+    "passed": 61,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+
+  "lint": {
+    "run": true,
+    "command": "docker compose --profile test run --rm --entrypoint '' test ruff check src gunicorn.conf.py docs/custom_implementations --exclude alembic/env.py --ignore EXE002",
+    "exit_code": 0,
+    "violations": 0
+  },
+
+  "requirements_verification": [
+    {
+      "id": "FR-1",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#functional-requirements",
+      "statement": "None of the 26 files listed in # Problem contains `from __future__ import annotations`.",
+      "status": "verified",
+      "evidence": [
+        { "type": "command_output", "ref": "grep -rn \"from __future__ import\" --include=*.py .", "detail": "0 matches outside .venv/.git for every file in the spec's list (and the 1 extra file the spec's own count missed)" }
+      ]
+    },
+    {
+      "id": "FR-2",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#functional-requirements",
+      "statement": "No other .py file in the repository contains `from __future__ import annotations`.",
+      "status": "verified",
+      "evidence": [
+        { "type": "command_output", "ref": "grep -rln \"from __future__ import\" --include=*.py . | grep -v /.venv/ | grep -v /.git/ | wc -l", "detail": "returns 0" }
+      ]
+    },
+    {
+      "id": "FR-3",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#functional-requirements",
+      "statement": "The application still starts and the health check endpoint behaves as before.",
+      "status": "verified",
+      "evidence": [
+        { "type": "command_output", "ref": "docker compose up api / healthcheck", "detail": "api container reached Docker healthy state (healthcheck curls GET /health) while the working-tree diff was applied" },
+        { "type": "test", "ref": "tests/health/infrastructure/api/v1/test_health_router.py", "detail": "5 tests pass unchanged, asserting the /health response body shape" }
+      ]
+    },
+    {
+      "id": "FR-4",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#functional-requirements",
+      "statement": "The Python skill rule is worded as a prohibition and is located in .claude/skills/python/SKILL.md.",
+      "status": "verified",
+      "evidence": [
+        { "type": "code", "ref": ".claude/skills/python/SKILL.md:33", "detail": "\"Do not use `from __future__ import annotations` in any Python file.\" under the ## Imports section" }
+      ]
+    },
+    {
+      "id": "TR-1",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#technical-requirements",
+      "statement": "Must follow docs/best_practices.md.",
+      "status": "verified",
+      "evidence": [
+        { "type": "diff", "ref": "git diff -- src/ gunicorn.conf.py docs/custom_implementations/", "detail": "no best_practices.md pattern (Domain Exception, Transaction Management, Permission Guards, etc.) is touched or weakened by the change; best_practices.md itself makes no claim about __future__ imports" }
+      ]
+    },
+    {
+      "id": "TR-2",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#technical-requirements",
+      "statement": "Must follow the existing conventions defined in CLAUDE.md.",
+      "status": "verified",
+      "evidence": [
+        { "type": "code", "ref": ".claude/tasks/remove-future-annotations/", "detail": "spec/plan/gate/review artifacts exist at the paths CLAUDE.md and the artifacts skill define" }
+      ]
+    },
+    {
+      "id": "TR-3",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#technical-requirements",
+      "statement": "Import ordering in edited files stays Ruff/isort-compliant.",
+      "status": "verified",
+      "evidence": [
+        { "type": "command_output", "ref": "ruff check src gunicorn.conf.py docs/custom_implementations --exclude alembic/env.py --ignore EXE002", "detail": "All checks passed! (rule I included via pyproject.toml extend-select)" }
+      ]
+    },
+    {
+      "id": "TR-4",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#technical-requirements",
+      "statement": "No unrelated changes are made to the edited files.",
+      "status": "verified",
+      "evidence": [
+        { "type": "diff", "ref": "git diff -- gunicorn.conf.py src/ docs/custom_implementations/ .claude/skills/python/SKILL.md", "detail": "every hunk is either the import+blank-line deletion or one of the 5 documented annotation quotes; no other line changed" }
+      ]
+    },
+    {
+      "id": "V-1",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#verification",
+      "statement": "Relevant automated tests pass (see proper skill).",
+      "status": "verified",
+      "evidence": [
+        { "type": "test", "ref": "docker compose --profile test run --rm test", "detail": "61 passed, 0 failed" }
+      ]
+    },
+    {
+      "id": "V-2",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#verification",
+      "statement": "Static analysis/linting passes (ruff).",
+      "status": "verified",
+      "evidence": [
+        { "type": "command_output", "ref": "ruff check src gunicorn.conf.py docs/custom_implementations --exclude alembic/env.py --ignore EXE002", "detail": "0 violations once the pre-existing, diff-unrelated EXE002 (executable-bit-without-shebang) noise is excluded -- see W2" }
+      ]
+    },
+    {
+      "id": "V-3",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#verification",
+      "statement": "A repository-wide search for from __future__ import annotations in *.py files returns zero results.",
+      "status": "verified",
+      "evidence": [
+        { "type": "command_output", "ref": "grep -rn \"from __future__ import\" --include=*.py .", "detail": "0 matches (excl .venv/.git)" }
+      ]
+    },
+    {
+      "id": "V-4",
+      "source": ".claude/tasks/remove-future-annotations/specs/remove-future-annotations.md#verification",
+      "statement": "Importing every module under src/ succeeds without NameError or annotation-resolution errors.",
+      "status": "verified",
+      "evidence": [
+        { "type": "command_output", "ref": "python -c \"import importlib, pkgutil, src; [importlib.import_module(m.name) for m in pkgutil.walk_packages(src.__path__, 'src.')]\"", "detail": "imported 48 modules OK" }
+      ]
+    }
+  ],
+
+  "critical_issues": [],
+
+  "warnings": [
+    {
+      "id": "W1",
+      "dimension": "maintainability",
+      "severity": "minor",
+      "title": "Developer's reported file count does not match the actual diff",
+      "location": "working-tree diff (src/)",
+      "detail": "The Developer reported '24 files under src/' in their verification summary. The actual diff touches 23 files under src/ (confirmed by `git diff --name-only` filtered to src/), matching the plan's own inventory (1 root + 23 src + 3 docs = 27). The overall total of 27 .py files is correct and no file was missed or edited unnecessarily, but the Developer's own breakdown was off by one, which could mislead a reader cross-checking the report against the plan.",
+      "suggested_fix": "Correct the Developer's verification note to '23 files under src/' to match the actual diff and the plan's inventory table."
+    },
+    {
+      "id": "W2",
+      "dimension": "testing",
+      "severity": "minor",
+      "title": "Running `ruff check .` unscoped inside the test container explodes on .venv and on a pre-existing EXE002 condition",
+      "location": "project-wide ruff invocation",
+      "detail": "Running the plan's documented command verbatim as `ruff check . --exclude alembic/env.py` inside the Docker test image produces ~165k errors, because passing `--exclude` on the CLI replaces Ruff's built-in default excludes (which include .venv) instead of adding to them -- so .venv's own third-party source gets linted. Separately, scoping to project paths (src, gunicorn.conf.py) still reports EXE002 (file executable, no shebang) on literally every single .py file under src/ and gunicorn.conf.py, with no correlation to this diff's edits (git shows 100644/non-executable mode for all of them on the host; the image evidently sets the whole src/ tree executable at build/COPY time). The Developer's choice to scope paths explicitly and add --ignore EXE002, attributing it to a Windows/build-permissions artifact, is consistent with what I independently reproduced and is acceptable -- this is a pre-existing, diff-unrelated condition, not introduced by this change.",
+      "suggested_fix": "File a separate, out-of-scope ticket to fix the ruff-on-.venv pitfall (use --extend-exclude instead of --exclude in the documented verification command and in CI) and to stop the Docker build from marking src/*.py executable."
+    }
+  ],
+
+  "recommendations": [
+    {
+      "id": "R1",
+      "dimension": "testing",
+      "title": "Document the --extend-exclude vs --exclude Ruff pitfall in the testing skill",
+      "detail": "The testing skill's documented lint command (`ruff check . --exclude alembic/env.py`) silently disables Ruff's default .venv exclusion when run from a directory that contains .venv (as the project's own Docker test image does). Switching the documented command to `--extend-exclude` would prevent a future verifier from reproducing the ~165k-error explosion seen during this review.",
+      "priority": "low"
+    }
+  ],
+
+  "test_ownership": {
+    "tester_tests_modified": false,
+    "modified_files": []
+  },
+
+  "verdict": {
+    "recommendation": "approve",
+    "blocking_reasons": [],
+    "summary": "A clean, minimal, mechanical removal of `from __future__ import annotations` from all 27 .py files plus a correctly placed, clearly worded prohibition rule in the Python skill. All 5 self-referencing annotations are quoted correctly as whole expressions, no other annotation fails under eager evaluation (verified by importing all 48 src modules and running the full 61-test suite unchanged), and no unrelated edits were introduced. Two minor, non-blocking warnings: a one-file discrepancy in the Developer's own file-count report, and a pre-existing, diff-unrelated EXE002/ruff-exclude environment quirk that the Developer handled reasonably."
+  }
+}
